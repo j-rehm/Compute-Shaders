@@ -1,8 +1,15 @@
 using UnityEngine;
 using UnityEngine.Experimental.Rendering;
+using UnityEngine.UIElements;
 
 public class SlimeMoldTest : MonoBehaviour
 {
+    public enum SpawnConfiguration
+    {
+        CenterOut,
+        Random
+    }
+
     private const int updateKernelIndex = 0;
     private const int diffuseKernelIndex = 1;
     private const int gradientKernelIndex = 2;
@@ -17,6 +24,7 @@ public class SlimeMoldTest : MonoBehaviour
     [Min(100)]
     public int height = 2160;
     public int agentCount = 1;
+    public SpawnConfiguration spawnConfiguration = SpawnConfiguration.CenterOut;
 
     [Header("Slime Settings")]
     [Min(1)]
@@ -61,7 +69,7 @@ public class SlimeMoldTest : MonoBehaviour
         {
             agents[i] = new Agent()
             {
-                position = center,
+                position = spawnConfiguration == SpawnConfiguration.CenterOut ? center : new(Random.Range(0, width - 1), Random.Range(0, height - 1)),
                 angle = Random.value * Mathf.PI * 2
             };
         }

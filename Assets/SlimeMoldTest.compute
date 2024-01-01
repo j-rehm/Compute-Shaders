@@ -88,7 +88,7 @@ float sense(Agent agent, float sensorAngleOffset)
     return sum;
 }
 
-[numthreads(25, 1, 1)]
+[numthreads(1000, 1, 1)]
 void Update (uint3 id : SV_DispatchThreadID)
 {
     if (id.x < 0 || id.x >= agentCount)
@@ -144,7 +144,7 @@ RWTexture2D<float> DiffuseTrailMap;
 
 float diagonalWeight = 1 / sqrt(2);
 
-[numthreads(2, 2, 1)]
+[numthreads(16, 9, 1)]
 void Diffuse (uint3 id : SV_DispatchThreadID)
 {
     if (id.x < 0 || id.x >= (uint) width || id.y < 0 || id.y >= (uint) height)
@@ -187,7 +187,7 @@ float to01(float start, float end, float value)
     return (value - start) / (end - start);
 };
 
-[numthreads(2, 2, 1)]
+[numthreads(16, 9, 1)]
 void Gradient(uint3 id : SV_DispatchThreadID)
 {
     if (id.x < 0 || id.x >= width || id.y < 0 || id.y >= height)

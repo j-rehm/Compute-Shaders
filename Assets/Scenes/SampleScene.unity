@@ -230,10 +230,11 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   computeShader: {fileID: 7200000, guid: a5603a6434dd19f4baf45b1a747e50d7, type: 3}
-  width: 2560
-  height: 1440
-  agentCount: 100000
-  stepsPerFrame: 1
+  width: 1920
+  height: 1080
+  agentCount: 40000
+  spawnConfiguration: 0
+  stepsPerFrame: 10
   moveSpeed: 65
   turnSpeed: 2.5
   sensorAngleDegrees: 30
