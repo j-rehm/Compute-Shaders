@@ -1,0 +1,46 @@
+#pragma kernel Gradient
+
+struct ColorPoint
+{
+    float position;
+    float4 color;
+};
+
+StructuredBuffer<ColorPoint> colorPoints;
+
+RWTexture2D<float4> GradientMap;
+int width;
+int height;
+
+float to01(float start, float end, float value)
+{
+    return (value - start) / (end - start);
+};
+float to01(int start, int end, uint value)
+{
+    return ((float) value - start) / (end - start);
+};
+
+[numthreads(1,1,1)]
+void Gradient (uint3 id : SV_DispatchThreadID)
+{
+    if (id.x < 0 || id.x >= width || id.y < 0 || id.y >= height)
+        return;
+    
+    float4 color = float4(0, 0, 0, 0);
+    float target = to01(0, width, id.x);
+    ColorPoint previousColorPoint = colorPoints[0];
+    [unroll]
+    for (int i = 1; i < 8; i++)
+    {
+        ColorPoint colorPoint = colorPoints[i];
+        if (colorPoint.position > target)
+        {
+            color = lerp(previousColorPoint.color, colorPoint.color, to01(previousColorPoint.position, colorPoint.position, target));
+            break;
+        }
+        previousColorPoint = colorPoint;
+    }
+    
+    GradientMap[id.xy] = color;
+}

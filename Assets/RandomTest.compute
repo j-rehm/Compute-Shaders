@@ -1,0 +1,35 @@
+#pragma kernel RandomTest
+
+RWTexture2D<float4> Texture;
+uint width;
+uint height;
+
+uint hash(inout uint state)
+{
+    state ^= 2747636419u;
+    state *= 2654435769u;
+    state ^= state >> 16;
+    state *= 2654435769u;
+    state ^= state >> 16;
+    state *= 2654435769u;
+    return state;
+}
+
+[numthreads(8,8,1)]
+void RandomTest (uint3 id : SV_DispatchThreadID)
+{
+    if (id.x < 0 || id.x >= width || id.y < 0 || id.y >= height)
+        return;
+    
+    int pixelIndex = id.y * width + id.x;
+    
+    float uintMaxValueF = 4294967295.0;
+    
+    float randomR = hash(pixelIndex) / uintMaxValueF;
+    float randomG = hash(pixelIndex) / uintMaxValueF;
+    float randomB = hash(pixelIndex) / uintMaxValueF;
+    float randomA = hash(pixelIndex) / uintMaxValueF;
+    
+    Texture[id.xy] = float4(randomR, randomG, randomB, 1.0);
+    //Texture[id.xy] = randomA;
+}

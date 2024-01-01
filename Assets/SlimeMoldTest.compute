@@ -1,0 +1,212 @@
+#pragma kernel Update
+
+struct Agent
+{
+    float2 position;
+    float angle;
+};
+
+float moveSpeed;
+uint agentCount;
+RWStructuredBuffer<Agent> agents;
+
+RWTexture2D<float> TrailMap;
+uint width;
+uint height;
+
+float deltaTime;
+
+float2 WrapWithinTexture(float2 position)
+{
+    while (position.x < 0)
+        position.x += width;
+    position.x %= width;
+    
+    while (position.y < 0)
+        position.y += height;
+    position.y %= height;
+    
+    return position;
+}
+int2 WrapWithinTexture(int2 position)
+{
+    while (position.x < 0)
+        position.x += width;
+    position.x %= width;
+    
+    while (position.y < 0)
+        position.y += height;
+    position.y %= height;
+    
+    return position;
+}
+
+// Hash function www.cs.ubc.ca/~rbridson/docs/schechter-sca08-turbulence.pdf
+uint hash(uint state)
+{
+    state ^= 2747636419u;
+    state *= 2654435769u;
+    state ^= state >> 16;
+    state *= 2654435769u;
+    state ^= state >> 16;
+    state *= 2654435769u;
+    return state;
+}
+
+float scaleToRange01(uint state)
+{
+    return state / 4294967295.0;
+}
+float turnSpeed;
+float sensorAngleDegrees;
+float sensorOffsetDst;
+int sensorSize;
+float time;
+float sense(Agent agent, float sensorAngleOffset)
+{
+    float sensorAngle = agent.angle + sensorAngleOffset;
+    float2 sensorDir = float2(cos(sensorAngle), sin(sensorAngle));
+
+    float2 sensorPos = agent.position + sensorDir * sensorOffsetDst;
+    int sensorCentreX = (int) sensorPos.x;
+    int sensorCentreY = (int) sensorPos.y;
+
+    float sum = 0;
+
+    int4 senseWeight = 5 * 2 - 1;
+
+    for (int offsetX = -sensorSize; offsetX <= sensorSize; offsetX++)
+    {
+        for (int offsetY = -sensorSize; offsetY <= sensorSize; offsetY++)
+        {
+            int sampleX = min(width - 1, max(0, sensorCentreX + offsetX));
+            int sampleY = min(height - 1, max(0, sensorCentreY + offsetY));
+            sum += dot(senseWeight, TrailMap[int2(sampleX, sampleY)]);
+        }
+    }
+
+    return sum;
+}
+
+[numthreads(25, 1, 1)]
+void Update (uint3 id : SV_DispatchThreadID)
+{
+    if (id.x < 0 || id.x >= agentCount)
+        return;
+    
+    Agent agent = agents[id.x];
+    float2 pos = agent.position;
+
+    uint random = hash(pos.y * width + pos.x + hash(id.x + time * 100000));
+
+	// Steer based on sensory data
+    float sensorAngleRad = sensorAngleDegrees * (3.1415 / 180);
+    float weightForward = sense(agent, 0);
+    float weightLeft = sense(agent, sensorAngleRad);
+    float weightRight = sense(agent, -sensorAngleRad);
+
+	
+    float randomSteerStrength = scaleToRange01(random);
+    float turnSpeed1 = turnSpeed * 2 * 3.1415;
+
+	// Continue in same direction
+    if (weightForward > weightLeft && weightForward > weightRight)
+    {
+        agents[id.x].angle += 0;
+    }
+    else if (weightForward < weightLeft && weightForward < weightRight)
+    {
+        agents[id.x].angle += (randomSteerStrength - 0.5) * 2 * turnSpeed1 * deltaTime;
+    }
+	// Turn right
+    else if (weightRight > weightLeft)
+    {
+        agents[id.x].angle -= randomSteerStrength * turnSpeed1 * deltaTime;
+    }
+	// Turn left
+    else if (weightLeft > weightRight)
+    {
+        agents[id.x].angle += randomSteerStrength * turnSpeed1 * deltaTime;
+    }
+    
+    float2 direction = float2(cos(agent.angle), sin(agent.angle));
+    float2 newPos = WrapWithinTexture(pos + direction * moveSpeed * deltaTime);
+    agents[id.x].position = newPos;
+    TrailMap[int2(newPos.x, newPos.y)] = 1;
+}
+
+#pragma kernel Diffuse
+
+float decayRate;
+float diffuseRate;
+
+RWTexture2D<float> DiffuseTrailMap;
+
+float diagonalWeight = 1 / sqrt(2);
+
+[numthreads(2, 2, 1)]
+void Diffuse (uint3 id : SV_DispatchThreadID)
+{
+    if (id.x < 0 || id.x >= (uint) width || id.y < 0 || id.y >= (uint) height)
+        return;
+
+    float originalColor = TrailMap[id.xy];
+    
+    float sum3x3 = 0;
+    for (int offsetX = -1; offsetX <= 1; offsetX++)
+    {
+        for (int offsetY = -1; offsetY <= 1; offsetY++)
+        {
+            int2 samplePosition = int2(id.x + offsetX, id.y + offsetY);
+            float sampleColor = TrailMap[WrapWithinTexture(int2(id.x + offsetX, id.y + offsetY))];
+            sum3x3 += offsetX == 0 || offsetY == 0 ? sampleColor : sampleColor * diagonalWeight;
+        }
+    }
+
+    float blurredColor = sum3x3 / 5 + (4 * diagonalWeight);
+    float diffuseWeight = saturate(diffuseRate * deltaTime);
+    blurredColor = originalColor * (1 - diffuseWeight) + blurredColor * diffuseWeight;
+    
+    DiffuseTrailMap[id.xy] = max(0, blurredColor - decayRate * deltaTime);
+}
+
+#pragma kernel Gradient
+
+struct ColorPoint
+{
+    float position;
+    float4 color;
+};
+
+StructuredBuffer<ColorPoint> colorPoints;
+
+RWTexture2D<float4> GradientMap;
+
+float to01(float start, float end, float value)
+{
+    return (value - start) / (end - start);
+};
+
+[numthreads(2, 2, 1)]
+void Gradient(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x < 0 || id.x >= width || id.y < 0 || id.y >= height)
+        return;
+    
+    float4 color = float4(0, 0, 0, 0);
+    float target = TrailMap[id.xy];
+    ColorPoint previousColorPoint = colorPoints[0];
+    [unroll]
+    for (int i = 1; i < 8; i++)
+    {
+        ColorPoint colorPoint = colorPoints[i];
+        if (colorPoint.position > target)
+        {
+            color = lerp(previousColorPoint.color, colorPoint.color, to01(previousColorPoint.position, colorPoint.position, target));
+            break;
+        }
+        previousColorPoint = colorPoint;
+    }
+    
+    GradientMap[id.xy] = color;
+}
